@@ -1,0 +1,118 @@
+---
+title: "Comparing predicted to actual votes for the 2014 Toronto mayoral election"
+author: "Psephoanalytics"
+date: '`r Sys.Date()`'
+output:
+  html_document:
+    css: psepho_styles.css
+---
+```{r libraries, echo=FALSE, message=FALSE, warning=FALSE}
+library(rvest)
+library(dplyr)
+library(tidyr)
+library(toVotes)
+library(ggplot2)
+library(ggmap)
+library(mapproj)
+```
+
+Our [predictions](http://psephoanalytics.blogspot.ca/2014/10/as-promised-here-is-ward-by-ward.html) for the 2014 mayoral race in Toronto were taken from a [simple agent-based model](http://psephoanalytics.blogspot.ca/2014/10/our-final-predictions-have-john-tory.html) that used demographic characteristics and results of previous elections.
+
+Now that the final vote results are available, here's a look at how our predictions held up at the ward level. Unfortunately, the official turnout results are not yet available. So, we'll have to revisit our turnout predictions later.
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE, cache=TRUE}
+# Download and process predictions
+predictions_source <- html("http://psephoanalytics.blogspot.ca/2014/10/as-promised-here-is-ward-by-ward.html")
+ward_predictions <- predictions_source %>%
+  html_node("table") %>%
+  html_table(header = TRUE)
+predicted_votes <- ward_predictions %>% 
+  select(-Turnout) %>%
+  gather(candidate, proportion_votes, Tory:Chow) %>%
+  mutate(proportion_votes = as.integer(gsub("%", "", proportion_votes))/100, year = 2014, type = "predicted")
+names(predicted_votes) <- tolower(names(predicted_votes))
+# Prepare actuals
+major_candidates <- c("tory john", "ford doug", "chow olivia")
+actual_votes <- toVotes %>%
+  filter(year == 2014, type == "Mayor") %>%
+  select(year, candidate, votes, ward) %>%
+  group_by(year, ward, candidate) %>%
+  summarize(votes = sum(votes)) %>%
+  group_by(year, ward, add = FALSE) %>%
+  mutate(proportion_votes = round(votes / sum(votes), 2)) %>%
+  filter(candidate %in% major_candidates) %>%
+  mutate(type = "actual") %>%
+  select(-votes)
+actual_votes$candidate <- droplevels(actual_votes$candidate)
+levels(actual_votes$candidate) <- c("Tory", "Chow", "Ford")
+# Combine and clean up
+votes <- rbind(predicted_votes, actual_votes)
+votes$type <- as.factor(votes$type)
+rm(predicted_votes, actual_votes, major_candidates, ward_predictions, predictions_source)
+# Calculate differences
+vote_analysis <- votes %>%
+  spread(type, proportion_votes) %>%
+  mutate(difference_from_actual = actual - predicted)
+vote_analysis$ward <- as.integer(vote_analysis$ward)
+# Function for se's
+se <- function(x) sd(x)/sqrt(length(x))
+```
+
+We start by looking at the distribution of differences as the proportion of actual votes minus the proportion of predicted votes. Positive differences mean that we underestimated the votes obtained, while negative differences mean we overestimated the votes.
+
+```{r histogram, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(vote_analysis, aes(x = difference_from_actual)) +
+  geom_histogram() +
+  geom_vline(color = "blue", size = 1, aes(xintercept = 0.0)) +
+  xlab("Difference from actual")
+```
+
+The differences appear to be slightly biased towards negative values, suggesting that in general we overestimated votes. But, the median value is close to zero (`r median(vote_analysis$difference_from_actual)`) with a standard error of `r round(se(vote_analysis$difference_from_actual), 2)`. Despite this small standard error, the overall range of the differences is large with a minimum of `r min(vote_analysis$difference_from_actual)` and maximum of `r max(vote_analysis$difference_from_actual)`.
+
+Now we take a look at the distribution of differences across wards. In this case, the order of wards isn't relevant, so we just arrange them randomly. We also colour the points based on the candidate to look for patterns of deviation by candidate across wards. In general, the differences appear randomly scattered across wards.
+
+```{r ward_distribution, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(vote_analysis, aes(x = ward, y = difference_from_actual, colour = candidate)) +
+  geom_point() +
+  geom_hline(color = "blue", size = 1, aes(yintercept = 0.0)) +
+  theme(axis.text.x  = element_blank()) +
+  xlab("Ward") +
+  ylab("Difference from actual")
+```
+
+Now, we turn to looking at differences across candidates.
+
+```{r candidate_distribution, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(vote_analysis, aes(x = candidate, y = difference_from_actual)) +
+  geom_boxplot() +
+  geom_hline(color = "blue", size = 1, aes(yintercept = 0.0)) +
+  xlab("Candidate") +
+  ylab("Difference from actual")
+```
+
+This plot shows that our predictions has the smallest differences for Chow, though they generally overestimated her support (i.e., the differences are negative). Excluding the outliers, both Tory and Ford have roughly equal variation. However, our predictions consistently underestimated Ford's support and they consistently overestimated Tory's support.
+
+Finally, we can combine the ward and candidate effects by plotting the differences on a map. We need to be careful interpreting this though, since candidates and geography are strongly correlated with each other.
+
+```{r map, echo=FALSE, message=FALSE, warning=FALSE}
+differences_geo <- left_join(vote_analysis, toPollGeo)
+toronto_map <- qmap("queens park,toronto", zoom = 11, maptype = 'terrain')
+toronto_map +
+  geom_polygon(aes(x=long, y=lat, group=group, fill=cut_interval(difference_from_actual, 5)), alpha = 5/6, data=differences_geo) + 
+  scale_fill_brewer("Difference from actual", type = "div", labels=c("Overestimate", "", "", "", "Underestimate"))
+```
+
+This map shows that in general, we overestimated Tory's support in areas where Ford ended up with more actual votes.
+
+This becomes more clear when we map each candidate separately.
+
+```{r map_by_candidate, echo=FALSE, message=FALSE, warning=FALSE}
+differences_geo <- left_join(vote_analysis, toPollGeo)
+toronto_map <- qmap("queens park,toronto", zoom = 11, maptype = 'terrain')
+toronto_map +
+  geom_polygon(aes(x=long, y=lat, group=group, fill=cut_interval(difference_from_actual, 5)), alpha = 5/6, data=differences_geo) + 
+  scale_fill_brewer("Difference from actual", type = "div", labels=c("Overestimate", "", "", "", "Underestimate")) +
+  facet_wrap(~candidate)
+```
+
+In the end, our estimates weren't too bad on average: the distribution of errors is centered on zero (i.e., not biased) with a small standard error. But, on-average estimates are not sufficient for the types of prediction we would like to make. We understood that our simple agent-based approach wouldn't be enough. Now we're particularly motivated to gather up _much_ more data to enrich our agents' behaviour and make better predictions. 
