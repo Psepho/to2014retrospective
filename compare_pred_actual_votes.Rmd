@@ -18,7 +18,7 @@ library(mapproj)
 
 Our [predictions](http://psephoanalytics.blogspot.ca/2014/10/as-promised-here-is-ward-by-ward.html) for the 2014 mayoral race in Toronto were taken from a [simple agent-based model](http://psephoanalytics.blogspot.ca/2014/10/our-final-predictions-have-john-tory.html) that used demographic characteristics and results of previous elections.
 
-Now that the final vote results are available, here's a look at how our predictions held up at the ward level. Unfortunately, the official turnout results are not yet available. So, we'll have to revisit our turnout predictions later.
+Now that the final vote results are available, here's a look at how our predictions held up at the ward level. Unfortunately, the official turnout results are not yet available at the Ward level. So, we'll have to revisit our turnout predictions later.
 
 ```{r setup, echo=FALSE, message=FALSE, warning=FALSE, cache=TRUE}
 # Download and process predictions
@@ -69,7 +69,7 @@ ggplot(vote_analysis, aes(x = difference_from_actual)) +
 
 The differences appear to be slightly biased towards negative values, suggesting that in general we overestimated votes. But, the median value is close to zero (`r median(vote_analysis$difference_from_actual)`) with a standard error of `r round(se(vote_analysis$difference_from_actual), 2)`. Despite this small standard error, the overall range of the differences is large with a minimum of `r min(vote_analysis$difference_from_actual)` and maximum of `r max(vote_analysis$difference_from_actual)`.
 
-Now we take a look at the distribution of differences across wards. In this case, the order of wards isn't relevant, so we just arrange them randomly. We also colour the points based on the candidate to look for patterns of deviation by candidate across wards. In general, the differences appear randomly scattered across wards.
+Now we take a look at the distribution of differences across wards. In this case, the order of wards isn't relevant, so we just arrange them randomly. We also colour the points based on the candidate to look for patterns of deviation by candidate across wards. In general, the differences appear randomly scattered across wards, but there are definitely some areas where our modeling underestimated Ford’s support at the expense of Tory.
 
 ```{r ward_distribution, echo=FALSE, message=FALSE, warning=FALSE}
 ggplot(vote_analysis, aes(x = ward, y = difference_from_actual, colour = candidate)) +
@@ -102,9 +102,9 @@ toronto_map +
   scale_fill_brewer("Difference from actual", type = "div", labels=c("Overestimate", "", "", "", "Underestimate"))
 ```
 
-This map shows that in general, we overestimated Tory's support in areas where Ford ended up with more actual votes.
+The above map shows that in general, we overestimated Tory's support in areas where Ford ended up with more actual votes.
 
-This becomes more clear when we map each candidate separately.
+This becomes more clear when we map each candidate separately:
 
 ```{r map_by_candidate, echo=FALSE, message=FALSE, warning=FALSE}
 differences_geo <- left_join(vote_analysis, toPollGeo)
